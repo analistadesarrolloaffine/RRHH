@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>9-Box Grid — Gestión Humana</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0b0d14;
+  --surface: #12151f;
+  --surface2: #181c2a;
+  --border: rgba(255,255,255,0.07);
+  --text: #dde1ef;
+  --muted: #555d78;
+  --accent: #7c6af7;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Syne', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px;
+  gap: 10px;
+  height: 100vh;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.header-left h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: -0.02em; color: #fff; }
+.header-left p { font-size: 0.65rem; color: var(--muted); font-family: 'JetBrains Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; margin-top: 1px; }
+.filtros { display: flex; gap: 8px; }
+.filtros select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 5px 10px; border-radius: 6px; font-family: 'Syne', sans-serif; font-size: 0.72rem; cursor: pointer; outline: none; }
+.filtros select:hover { border-color: var(--accent); }
+
+.stats-bar { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; flex-shrink: 0; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 7px 8px; display: flex; flex-direction: column; align-items: center; gap: 2px; position: relative; overflow: hidden; }
+.stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--color, var(--muted)); opacity: 0.7; }
+.stat-num { font-size: 1.1rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--color, #fff); line-height: 1; }
+.stat-lbl { font-size: 0.55rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; text-align: center; line-height: 1.2; }
+
+.main-area { display: flex; gap: 12px; flex: 1; min-height: 0; }
+
+.names-panel { width: 160px; flex-shrink: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow-y: auto; padding: 8px 6px; display: flex; flex-direction: column; gap: 4px; }
+.names-panel::-webkit-scrollbar { width: 4px; }
+.names-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.name-item { display: flex; align-items: center; gap: 7px; padding: 4px 6px; border-radius: 6px; cursor: pointer; transition: background 0.15s; }
+.name-item:hover { background: var(--surface2); }
+.name-item.activo { background: rgba(124,106,247,0.15); }
+.name-avatar { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid; overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 0.55rem; font-weight: 700; color: #fff; }
+.name-text { font-size: 0.65rem; font-weight: 500; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.name-quad { font-size: 0.55rem; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+
+.grid-container { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.grid-with-axes { flex: 1; display: grid; grid-template-columns: 28px 1fr; grid-template-rows: 1fr 20px 16px; min-height: 0; }
+.axis-y-label { grid-column: 1; grid-row: 1; display: flex; align-items: center; justify-content: center; }
+.axis-y-label span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 0.6rem; font-family: 'JetBrains Mono', monospace; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+.canvas-wrap { grid-column: 2; grid-row: 1; position: relative; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+#grid-svg { width: 100%; height: 100%; display: block; }
+.axis-x-ticks { grid-column: 2; grid-row: 2; display: flex; justify-content: space-between; align-items: flex-start; padding: 3px 0 0 0; }
+.axis-x-ticks span { font-size: 0.58rem; font-family: 'JetBrains Mono', monospace; color: var(--muted); }
+.axis-x-label { grid-column: 2; grid-row: 3; text-align: center; font-size: 0.6rem; font-family: 'JetBrains Mono', monospace; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+
+/* ── SINGLE TOOLTIP ── */
+.tooltip {
+  position: fixed; background: var(--surface2);
+  border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; width: 210px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.7);
+  pointer-events: none; opacity: 0; transform: translateY(6px) scale(0.96);
+  transition: opacity 0.15s, transform 0.15s; z-index: 9999; overflow: hidden;
+}
+.tooltip.visible { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+.tt-header { display: flex; align-items: center; gap: 10px; padding: 12px 12px 8px; border-bottom: 1px solid var(--border); }
+.tt-avatar { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; border: 2px solid rgba(255,255,255,0.1); overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: 700; color: #fff; }
+.tt-nombre { font-size: 0.78rem; font-weight: 600; color: #fff; }
+.tt-cargo  { font-size: 0.65rem; color: var(--muted); margin-top: 2px; }
+.tt-body   { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.tt-quad { font-size: 0.67rem; font-weight: 600; padding: 3px 8px; border-radius: 20px; width: fit-content; }
+.score-row { display: flex; flex-direction: column; gap: 3px; }
+.score-lbl { display: flex; justify-content: space-between; font-size: 0.63rem; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+.score-val { color: var(--text); font-weight: 500; }
+.score-bar { height: 3px; background: rgba(255,255,255,0.07); border-radius: 4px; overflow: hidden; }
+.score-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+
+/* ── STACK POPOVER ── */
+.stack-popover {
+  position: fixed;
+  background: var(--surface2);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 14px;
+  padding: 10px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+  z-index: 10000;
+  opacity: 0;
+  transform: translateY(8px) scale(0.95);
+  transition: opacity 0.18s, transform 0.18s;
+  pointer-events: none;
+  min-width: 240px;
+  max-width: 360px;
+  width: max-content;
+}
+.stack-popover.visible { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+
+.sp-header {
+  font-size: 0.6rem;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding-bottom: 7px;
+  margin-bottom: 7px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sp-badge {
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sp-list { display: flex; flex-direction: column; gap: 5px; }
+
+.sp-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.12s;
+  border: 1px solid transparent;
+}
+.sp-item:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.08); }
+
+.sp-avatar {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid; display: flex; align-items: center; justify-content: center;
+  font-size: 0.65rem; font-weight: 700; color: #fff; overflow: hidden;
+}
+.sp-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.sp-nombre { font-size: 0.72rem; font-weight: 600; color: #fff; white-space: normal; line-height: 1.3; }
+.sp-cargo  { font-size: 0.62rem; color: var(--muted); white-space: normal; line-height: 1.3; }
+.sp-quad   { font-size: 0.58rem; font-family: 'JetBrains Mono', monospace; margin-top: 1px; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>9-Box Grid</h1>
+    <p>Gestión Humana · Evaluación de Talento</p>
+  </div>
+  <div class="filtros">
+    <select id="filtro-area" onchange="filtrar()"><option value="">Todas las áreas</option></select>
+    <select id="filtro-cargo" onchange="filtrar()"><option value="">Todos los cargos</option></select>
+  </div>
+</header>
+
+<div class="stats-bar" id="stats-bar"></div>
+
+<div class="main-area">
+  <div class="names-panel" id="names-panel"></div>
+  <div class="grid-container">
+    <div class="grid-with-axes">
+      <div class="axis-y-label"><span>Potencial</span></div>
+      <div class="canvas-wrap" id="canvas-wrap" onclick="if(event.target===this||event.target.id==='grid-svg'){if(tooltipFijo){tooltipFijo=false;tooltipEl._cc=null;hideTooltip();activeCC=null;refreshHL();}if(stackFijo){stackFijo=false;activeStackKey=null;hideStack();refreshHL();}}">
+        <svg id="grid-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+      <div class="axis-x-ticks">
+        <span>0</span><span>10</span><span>20</span><span>30</span><span>40</span>
+        <span>50</span><span>60</span><span>70</span><span>80</span><span>90</span><span>100</span>
+      </div>
+      <div class="axis-x-label">Desempeño</div>
+    </div>
+  </div>
+</div>
+
+<!-- Single person tooltip -->
+<div class="tooltip" id="tooltip">
+  <div class="tt-header">
+    <div id="tt-foto-wrap"></div>
+    <div><div class="tt-nombre" id="tt-nombre"></div><div class="tt-cargo" id="tt-cargo"></div></div>
+  </div>
+  <div class="tt-body">
+    <span class="tt-quad" id="tt-quad"></span>
+    <div class="score-row">
+      <div class="score-lbl"><span>Desempeño</span><span class="score-val" id="tt-des"></span></div>
+      <div class="score-bar"><div class="score-fill" id="tt-des-bar" style="background:#34d399"></div></div>
+    </div>
+    <div class="score-row">
+      <div class="score-lbl"><span>Potencial</span><span class="score-val" id="tt-pot"></span></div>
+      <div class="score-bar"><div class="score-fill" id="tt-pot-bar" style="background:#7c6af7"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Stack popover -->
+<div class="stack-popover" id="stack-popover">
+  <div class="sp-header">
+    <span class="sp-badge" id="sp-count"></span>
+    <span id="sp-title"></span>
+  </div>
+  <div class="sp-list" id="sp-list"></div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════
+   CONFIGURACIÓN — ajusta solo estas dos líneas
+   ══════════════════════════════════════════════════════════
+   API_URL   : endpoint que devuelve { empleados: [...] }
+               Cada empleado debe tener:
+                 CC                  — identificador único
+                 NOMBRE              — nombre completo
+                 CARGO               — cargo / título
+                 AREA                — área / departamento
+                 PUNTAJE_DESEMPENO   — número 0-100
+                 PUNTAJE_POTENCIAL   — número 0-100
+                 FOTO (opcional)     — URL de imagen
+   USE_DEMO  : true  → siempre usa datos de ejemplo (desarrollo)
+               false → llama a la API (producción)
+   ══════════════════════════════════════════════════════════ */
+const API_URL  = "http://localhost:3000/api/9box";
+const USE_DEMO = false;   // ← cambiar a false cuando la API esté lista
+
+/* Datos de ejemplo — solo se usan si USE_DEMO=true o la API falla */
+const DEMO = [
+  {CC:"001",NOMBRE:"Ana Torres",     CARGO:"Gerente",       AREA:"Operaciones", PUNTAJE_DESEMPENO:88, PUNTAJE_POTENCIAL:92, FOTO:""},
+  {CC:"002",NOMBRE:"Luis Ramírez",   CARGO:"Analista",      AREA:"Finanzas",    PUNTAJE_DESEMPENO:72, PUNTAJE_POTENCIAL:55, FOTO:""},
+  {CC:"003",NOMBRE:"Claudia Mora",   CARGO:"Coordinadora",  AREA:"RRHH",        PUNTAJE_DESEMPENO:45, PUNTAJE_POTENCIAL:80, FOTO:""},
+  {CC:"004",NOMBRE:"Pedro Vega",     CARGO:"Técnico",       AREA:"IT",          PUNTAJE_DESEMPENO:30, PUNTAJE_POTENCIAL:28, FOTO:""},
+  {CC:"005",NOMBRE:"Mariana Gil",    CARGO:"Directora",     AREA:"Comercial",   PUNTAJE_DESEMPENO:91, PUNTAJE_POTENCIAL:76, FOTO:""},
+  {CC:"006",NOMBRE:"Jorge Pinto",    CARGO:"Analista",      AREA:"Operaciones", PUNTAJE_DESEMPENO:55, PUNTAJE_POTENCIAL:50, FOTO:""},
+  {CC:"007",NOMBRE:"Sofía Castro",   CARGO:"Especialista",  AREA:"IT",          PUNTAJE_DESEMPENO:78, PUNTAJE_POTENCIAL:88, FOTO:""},
+  {CC:"008",NOMBRE:"Andrés Ríos",    CARGO:"Técnico",       AREA:"Finanzas",    PUNTAJE_DESEMPENO:20, PUNTAJE_POTENCIAL:62, FOTO:""},
+  {CC:"009",NOMBRE:"Valentina Cruz", CARGO:"Coordinadora",  AREA:"Comercial",   PUNTAJE_DESEMPENO:62, PUNTAJE_POTENCIAL:35, FOTO:""},
+  {CC:"010",NOMBRE:"Camilo Díaz",    CARGO:"Gerente",       AREA:"RRHH",        PUNTAJE_DESEMPENO:84, PUNTAJE_POTENCIAL:60, FOTO:""},
+  {CC:"011",NOMBRE:"Natalia Ruiz",   CARGO:"Analista",      AREA:"IT",          PUNTAJE_DESEMPENO:38, PUNTAJE_POTENCIAL:45, FOTO:""},
+  {CC:"012",NOMBRE:"Esteban Lara",   CARGO:"Director",      AREA:"Operaciones", PUNTAJE_DESEMPENO:94, PUNTAJE_POTENCIAL:95, FOTO:""},
+  {CC:"013",NOMBRE:"Isabel Vargas",  CARGO:"Especialista",  AREA:"Comercial",   PUNTAJE_DESEMPENO:58, PUNTAJE_POTENCIAL:74, FOTO:""},
+  {CC:"014",NOMBRE:"Mauricio León",  CARGO:"Técnico",       AREA:"Finanzas",    PUNTAJE_DESEMPENO:15, PUNTAJE_POTENCIAL:18, FOTO:""},
+  {CC:"015",NOMBRE:"Paola Herrera",  CARGO:"Coordinadora",  AREA:"RRHH",        PUNTAJE_DESEMPENO:70, PUNTAJE_POTENCIAL:70, FOTO:""},
+  /* Ejemplos con puntaje idéntico → demuestran la baraja */
+  {CC:"016",NOMBRE:"Ricardo Blanco", CARGO:"Analista",      AREA:"IT",          PUNTAJE_DESEMPENO:88, PUNTAJE_POTENCIAL:92, FOTO:""},
+  {CC:"017",NOMBRE:"Diana Fuentes",  CARGO:"Técnica",       AREA:"Finanzas",    PUNTAJE_DESEMPENO:88, PUNTAJE_POTENCIAL:92, FOTO:""},
+  {CC:"018",NOMBRE:"Felipe Arango",  CARGO:"Especialista",  AREA:"Comercial",   PUNTAJE_DESEMPENO:72, PUNTAJE_POTENCIAL:55, FOTO:""},
+  {CC:"019",NOMBRE:"Carolina Nieto", CARGO:"Coordinadora",  AREA:"Operaciones", PUNTAJE_DESEMPENO:30, PUNTAJE_POTENCIAL:28, FOTO:""},
+];
+
+const QUADRANT_META = [
+  { nombre:"Enigma",         color:"#e879f9", r:0, c:0 },
+  { nombre:"Potencial Alto", color:"#34d399", r:0, c:1 },
+  { nombre:"Estrella",       color:"#818cf8", r:0, c:2 },
+  { nombre:"Dilema",         color:"#f87171", r:1, c:0 },
+  { nombre:"Core",           color:"#94a3b8", r:1, c:1 },
+  { nombre:"Pilar",          color:"#fbbf24", r:1, c:2 },
+  { nombre:"En Riesgo",      color:"#ef4444", r:2, c:0 },
+  { nombre:"Bajo Desempeño", color:"#f97316", r:2, c:1 },
+  { nombre:"Experto",        color:"#fb923c", r:2, c:2 },
+];
+
+const COLORES_DOT = [
+  "#818cf8","#34d399","#fbbf24","#f87171","#e879f9",
+  "#38bdf8","#fb923c","#a3e635","#f472b6","#2dd4bf",
+  "#facc15","#4ade80","#fb7185","#c084fc","#60a5fa",
+  "#a78bfa","#6ee7b7","#fde68a","#fca5a5","#f0abfc",
+];
+
+let todosEmpleados     = [];
+let empleadosFiltrados = [];
+let colorMap           = {};
+let activeCC           = null;
+let activeStackKey     = null;
+
+const tooltipEl      = document.getElementById("tooltip");
+const stackPopoverEl = document.getElementById("stack-popover");
+let tooltipFijo = false;
+let stackFijo   = false;
+
+/* ── HELPERS ── */
+function clasificar(des, pot) {
+  const col  = des >= 67 ? 2 : des >= 34 ? 1 : 0;
+  const fila = pot >= 67 ? 0 : pot >= 34 ? 1 : 2;
+  return QUADRANT_META.find(q => q.r === fila && q.c === col);
+}
+function iniciales(n) { return (n||"?").split(" ").slice(0,2).map(w=>w[0]).join("").toUpperCase(); }
+function scoreKey(emp) { return `${emp.PUNTAJE_DESEMPENO}_${emp.PUNTAJE_POTENCIAL}`; }
+function groupByScore(list) {
+  const map = {};
+  list.forEach(e => { const k=scoreKey(e); if(!map[k]) map[k]=[]; map[k].push(e); });
+  return map;
+}
+function posEl(el, evOrRect, w, h) {
+  const clientX = evOrRect.clientX ?? evOrRect.left;
+  const clientY = evOrRect.clientY ?? evOrRect.top;
+  let x = clientX + 16, y = clientY - 16;
+  if (x + w > window.innerWidth  - 8) x = clientX - w - 16;
+  if (y + h > window.innerHeight - 8) y = clientY - h;
+  if (y < 8) y = 8;
+  el.style.left = x + "px";
+  el.style.top  = y + "px";
+}
+
+// Position a tooltip/popover anchored to a dot circle (not the cursor)
+// Uses fixed known dimensions to avoid measuring hidden elements
+function posNearDot(el, svgCX, svgCY, R, svgRect, svgW, svgH) {
+  const scaleX  = svgRect.width  / svgW;
+  const scaleY  = svgRect.height / svgH;
+  const screenX = svgRect.left + svgCX * scaleX;
+  const screenY = svgRect.top  + svgCY * scaleY;
+  const dotR    = R * scaleX;
+
+  // Use known fixed sizes instead of offsetWidth (which is 0 while hidden)
+  const isStack = el === stackPopoverEl;
+  const elW = isStack ? 280 : 218;
+  const elH = isStack ? 200 : 195;
+  const gap = 12;
+
+  let x = screenX + dotR + gap;
+  let y = screenY - elH / 2;
+
+  if (x + elW > window.innerWidth - 8) x = screenX - dotR - elW - gap;
+  if (y < 8) y = 8;
+  if (y + elH > window.innerHeight - 8) y = window.innerHeight - elH - 8;
+
+  el.style.left = x + "px";
+  el.style.top  = y + "px";
+}
+
+/* ── STATS ── */
+function buildStats(list) {
+  const bar = document.getElementById("stats-bar");
+  bar.innerHTML = "";
+  QUADRANT_META.forEach(qm => {
+    const count = list.filter(e => clasificar(e.PUNTAJE_DESEMPENO, e.PUNTAJE_POTENCIAL).nombre === qm.nombre).length;
+    const card = document.createElement("div");
+    card.className = "stat-card";
+    card.style.setProperty("--color", qm.color);
+    card.innerHTML = `<div class="stat-num">${count}</div><div class="stat-lbl">${qm.nombre}</div>`;
+    bar.appendChild(card);
+  });
+}
+
+/* ── NAMES PANEL ── */
+function buildNames(list) {
+  const panel = document.getElementById("names-panel");
+  panel.innerHTML = "";
+  list.forEach(emp => {
+    const qm    = clasificar(emp.PUNTAJE_DESEMPENO, emp.PUNTAJE_POTENCIAL);
+    const color = colorMap[emp.CC];
+    const item  = document.createElement("div");
+    item.className = "name-item"; item.id = "ni-" + emp.CC;
+    item.addEventListener("click", (e) => handleNameClick(emp, e));
+
+    const av = document.createElement("div");
+    av.className = "name-avatar"; av.style.borderColor = color;
+    if (emp.FOTO) { av.innerHTML = `<img src="${emp.FOTO}" style="width:100%;height:100%;object-fit:cover"/>`; }
+    else { av.style.background = color; av.textContent = iniciales(emp.NOMBRE); }
+
+    const txt = document.createElement("div");
+    txt.innerHTML = `<div class="name-text">${emp.NOMBRE.split(" ").slice(0,2).join(" ")}</div><div class="name-quad" style="color:${qm.color}">${qm.nombre}</div>`;
+    item.appendChild(av); item.appendChild(txt);
+    panel.appendChild(item);
+  });
+}
+
+/* ── SVG GRID ── */
+function buildGrid(list, selectedCCs) {
+  const svg  = document.getElementById("grid-svg");
+  const wrap = document.getElementById("canvas-wrap");
+  const W    = wrap.clientWidth  || 600;
+  const H    = wrap.clientHeight || 400;
+  const ns   = "http://www.w3.org/2000/svg";
+
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.innerHTML = "";
+
+  // Single mousemove handler on SVG — much more stable than per-element enter/leave
+  let _hoverCC = null;
+  let _hoverKey2 = null;
+  svg.addEventListener("mousemove", e => {
+    if (tooltipFijo || stackFijo) return;
+    const rect = svg.getBoundingClientRect();
+    const scaleX = W / rect.width;
+    const scaleY = H / rect.height;
+    const mx = (e.clientX - rect.left) * scaleX;
+    const my = (e.clientY - rect.top)  * scaleY;
+
+    // Find closest hit element
+    let best = null, bestDist = Infinity;
+    svg.querySelectorAll("[data-hit]").forEach(el => {
+      const dx = mx - el._cx, dy = my - el._cy;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < el._R + 8 && dist < bestDist) { bestDist = dist; best = el; }
+    });
+
+    if (best) {
+      if (best._hoverType === "single") {
+        if (_hoverCC !== best._hoverEmp.CC) {
+          _hoverCC = best._hoverEmp.CC; _hoverKey2 = null;
+          fillTooltip(best._hoverEmp, best._hoverColor);
+          // Position near the dot circle, not the cursor
+          posNearDot(tooltipEl, best._cx, best._cy, best._R, rect, W, H);
+          tooltipEl.classList.add("visible");
+          hideStack();
+        }
+      } else {
+        if (_hoverKey2 !== best._hoverKey) {
+          _hoverKey2 = best._hoverKey; _hoverCC = null;
+          fillStack(best._hoverGroup, best._hoverKey, best._cx, best._cy, best._R);
+          posNearDot(stackPopoverEl, best._cx, best._cy, best._R, rect, W, H);
+          stackPopoverEl.classList.add("visible");
+          hideTooltip();
+        }
+      }
+    } else {
+      if (_hoverCC || _hoverKey2) {
+        _hoverCC = null; _hoverKey2 = null;
+        hideTooltip(); hideStack();
+      }
+    }
+  });
+  svg.addEventListener("mouseleave", () => {
+    if (!tooltipFijo) hideTooltip();
+    if (!stackFijo)   hideStack();
+    _hoverCC = null; _hoverKey2 = null;
+  });
+
+  // Quadrant backgrounds
+  const quadBg = [
+    ["#261535","#162038","#151e3a"],   // row 0: alto potencial
+    ["#2a1e1e","#1a1a1a","#1e2a12"],   // row 1: medio potencial
+    ["#321010","#231810","#122010"],   // row 2: bajo potencial
+  ];
+  // Transparent background rect catches clicks on empty space to close tooltips
+  const bgHit = document.createElementNS(ns,"rect");
+  bgHit.setAttribute("x",0); bgHit.setAttribute("y",0);
+  bgHit.setAttribute("width",W); bgHit.setAttribute("height",H);
+  bgHit.setAttribute("fill","transparent");
+  bgHit.addEventListener("click", e => {
+    e.stopPropagation();
+    const hadSelection = tooltipFijo || stackFijo || activeCC || activeStackKey;
+    tooltipFijo=false; tooltipEl._cc=null; hideTooltip();
+    stackFijo=false; activeStackKey=null; hideStack();
+    activeCC=null;
+    if (hadSelection) refreshHL();
+  });
+  svg.appendChild(bgHit);
+
+  for (let r=0; r<3; r++) for (let c=0; c<3; c++) {
+    const qm = QUADRANT_META.find(q=>q.r===r&&q.c===c);
+    const x=(c/3)*W, y=(r/3)*H;
+    const rect = document.createElementNS(ns,"rect");
+    rect.setAttribute("x",x); rect.setAttribute("y",y);
+    rect.setAttribute("width",W/3); rect.setAttribute("height",H/3);
+    rect.setAttribute("fill",quadBg[r][c]); svg.appendChild(rect);
+
+    const lt = document.createElementNS(ns,"text");
+    lt.setAttribute("x",x+(W/3)/2); lt.setAttribute("y",y+(H/3)-8);
+    lt.setAttribute("text-anchor","middle"); lt.setAttribute("fill",qm.color);
+    lt.setAttribute("opacity","0.55"); lt.setAttribute("font-size","13");
+    lt.setAttribute("font-family","Syne,sans-serif"); lt.setAttribute("font-weight","700");
+    lt.setAttribute("pointer-events","none"); lt.textContent=qm.nombre;
+    svg.appendChild(lt);
+  }
+
+  // Grid lines
+  const mkLine = (x1,y1,x2,y2,stroke,w) => {
+    const l=document.createElementNS(ns,"line");
+    l.setAttribute("x1",x1);l.setAttribute("y1",y1);
+    l.setAttribute("x2",x2);l.setAttribute("y2",y2);
+    l.setAttribute("stroke",stroke);l.setAttribute("stroke-width",w);
+    svg.appendChild(l);
+  };
+  [1/3,2/3].forEach(f => { mkLine(f*W,0,f*W,H,"rgba(255,255,255,0.22)","1.5"); mkLine(0,f*H,W,f*H,"rgba(255,255,255,0.22)","1.5"); });
+  for (let v=10;v<100;v+=10) { const px=(v/100)*W,py=(1-v/100)*H; mkLine(px,0,px,H,"rgba(255,255,255,0.025)","0.5"); mkLine(0,py,W,py,"rgba(255,255,255,0.025)","0.5"); }
+
+  // Y labels
+  [0,25,50,75,100].forEach(v => {
+    const t=document.createElementNS(ns,"text");
+    t.setAttribute("x",4); t.setAttribute("y",(1-v/100)*H-2);
+    t.setAttribute("fill","rgba(255,255,255,0.2)"); t.setAttribute("font-size","8");
+    t.setAttribute("font-family","JetBrains Mono,monospace"); t.textContent=v;
+    svg.appendChild(t);
+  });
+
+  const R = Math.max(14, Math.min(W,H)*0.038);
+  const groups = groupByScore(list);
+
+  // Clamp dots so they never bleed outside the SVG viewport
+  const PAD = R + 6;
+  const toX = v => Math.max(PAD, Math.min(W - PAD, (v/100)*W));
+  const toY = v => Math.max(PAD, Math.min(H - PAD, (1-v/100)*H));
+
+  Object.entries(groups).forEach(([key, group]) => {
+    const cx = toX(group[0].PUNTAJE_DESEMPENO);
+    const cy = toY(group[0].PUNTAJE_POTENCIAL);
+
+    // Check if a specific individual CC is selected (from name panel)
+    const individualSelected = selectedCCs && selectedCCs.size === 1 && !activeStackKey;
+    const selectedCC = individualSelected ? [...selectedCCs][0] : null;
+
+    // Is any member of this group the active one?
+    const activeInGroup = group.find(e => e.CC === activeCC);
+    const isActive = activeStackKey===key || !!activeInGroup;
+
+    // If user selected a specific person from the name panel and that person
+    // is in THIS group — draw only them as an individual dot (no stack)
+    if (individualSelected && activeInGroup) {
+      drawSingle(svg,ns,cx,cy,R,activeInGroup,colorMap[activeInGroup.CC],true,false);
+      return;
+    }
+
+    // dim dot if something else is selected
+    const isDimmed = selectedCCs && selectedCCs.size > 0 && !isActive;
+    if (group.length > 1) drawStack(svg,ns,cx,cy,R,group,key,isActive,isDimmed);
+    else drawSingle(svg,ns,cx,cy,R,group[0],colorMap[group[0].CC],isActive,isDimmed);
+  });
+}
+
+/* ── DRAW SINGLE DOT ── */
+function drawSingle(svg,ns,cx,cy,R,emp,color,isActive,isDimmed=false) {
+  const clipId = "c-"+emp.CC;
+  if (isActive) {
+    const ring=document.createElementNS(ns,"circle");
+    ring.setAttribute("cx",cx); ring.setAttribute("cy",cy);
+    ring.setAttribute("r",R+5); ring.setAttribute("fill","none");
+    ring.setAttribute("stroke",color); ring.setAttribute("stroke-width","2.5");
+    ring.setAttribute("opacity","0.8"); svg.appendChild(ring);
+  }
+  const cp=document.createElementNS(ns,"clipPath"); cp.setAttribute("id",clipId);
+  const cr=document.createElementNS(ns,"circle"); cr.setAttribute("cx",cx); cr.setAttribute("cy",cy); cr.setAttribute("r",R);
+  cp.appendChild(cr); svg.appendChild(cp);
+
+  // Wrap in a group to apply dimming
+  const g=document.createElementNS(ns,"g");
+  if (isDimmed) { g.setAttribute("opacity","0.18"); g.setAttribute("filter","grayscale(1)"); }
+  svg.appendChild(g);
+
+  const bg=document.createElementNS(ns,"circle");
+  bg.setAttribute("cx",cx); bg.setAttribute("cy",cy); bg.setAttribute("r",R);
+  bg.setAttribute("fill",color); bg.setAttribute("opacity","0.85"); g.appendChild(bg);
+
+  if (emp.FOTO) {
+    const img=document.createElementNS(ns,"image");
+    img.setAttribute("x",cx-R); img.setAttribute("y",cy-R);
+    img.setAttribute("width",R*2); img.setAttribute("height",R*2);
+    img.setAttribute("href",emp.FOTO); img.setAttribute("clip-path",`url(#${clipId})`);
+    img.setAttribute("preserveAspectRatio","xMidYMid slice"); g.appendChild(img);
+  } else {
+    const t=document.createElementNS(ns,"text");
+    t.setAttribute("x",cx); t.setAttribute("y",cy+1);
+    t.setAttribute("text-anchor","middle"); t.setAttribute("dominant-baseline","middle");
+    t.setAttribute("fill","#fff"); t.setAttribute("font-size",Math.max(8,R*0.52));
+    t.setAttribute("font-family","Syne,sans-serif"); t.setAttribute("font-weight","700");
+    t.setAttribute("pointer-events","none"); t.setAttribute("clip-path",`url(#${clipId})`);
+    t.textContent=iniciales(emp.NOMBRE); g.appendChild(t);
+  }
+
+  const brd=document.createElementNS(ns,"circle");
+  brd.setAttribute("cx",cx); brd.setAttribute("cy",cy); brd.setAttribute("r",R);
+  brd.setAttribute("fill","none"); brd.setAttribute("stroke","rgba(255,255,255,0.22)");
+  brd.setAttribute("stroke-width","1.5"); brd.setAttribute("pointer-events","none"); g.appendChild(brd);
+
+  const hit=document.createElementNS(ns,"circle");
+  hit.setAttribute("cx",cx); hit.setAttribute("cy",cy); hit.setAttribute("r",R+4);
+  hit.setAttribute("fill","transparent");
+  hit.setAttribute("data-hit","1");
+  hit.setAttribute("cursor", isDimmed ? "default" : "pointer");
+  if (isDimmed) hit.setAttribute("pointer-events","none");
+  hit.addEventListener("click",e=>{ e.stopPropagation(); toggleTooltip(e,emp,color,cx,cy,R); });
+  // Store hover data on element for SVG-level mousemove handler
+  hit._hoverType = "single";
+  hit._hoverEmp  = emp;
+  hit._hoverColor= color;
+  hit._cx = cx; hit._cy = cy; hit._R = R;
+  svg.appendChild(hit);
+}
+
+/* ── DRAW STACK (baraja) ── */
+function drawStack(svg,ns,cx,cy,R,group,key,isActive,isDimmed=false) {
+  const n    = group.length;
+  const off  = Math.min(6, R*0.3);
+  const show = Math.min(n, 3); // máx 3 visibles en la baraja
+
+  // Ring active
+  if (isActive) {
+    const ring=document.createElementNS(ns,"circle");
+    ring.setAttribute("cx",cx); ring.setAttribute("cy",cy);
+    ring.setAttribute("r",R+(show-1)*off+6); ring.setAttribute("fill","none");
+    ring.setAttribute("stroke","rgba(255,255,255,0.3)"); ring.setAttribute("stroke-width","2");
+    svg.appendChild(ring);
+  }
+
+  // Wrap visual elements in group for dimming
+  const sg=document.createElementNS(ns,"g");
+  if (isDimmed) { sg.setAttribute("opacity","0.18"); sg.setAttribute("filter","grayscale(1)"); }
+  svg.appendChild(sg);
+
+  // Draw back → front (fan hacia arriba-derecha)
+  for (let i=show-1; i>=0; i--) {
+    const emp   = group[i];
+    const color = colorMap[emp.CC];
+    const pcx   = cx + i*off*0.6;
+    const pcy   = cy - i*off*0.6;
+    const clipId= "cs-"+emp.CC;
+
+    // drop shadow
+    const sh=document.createElementNS(ns,"circle");
+    sh.setAttribute("cx",pcx+1.5); sh.setAttribute("cy",pcy+1.5);
+    sh.setAttribute("r",R+1); sh.setAttribute("fill","rgba(0,0,0,0.5)");
+    sh.setAttribute("pointer-events","none"); sg.appendChild(sh);
+
+    const cp=document.createElementNS(ns,"clipPath"); cp.setAttribute("id",clipId);
+    const cr=document.createElementNS(ns,"circle"); cr.setAttribute("cx",pcx); cr.setAttribute("cy",pcy); cr.setAttribute("r",R);
+    cp.appendChild(cr); sg.appendChild(cp);
+
+    const bg=document.createElementNS(ns,"circle");
+    bg.setAttribute("cx",pcx); bg.setAttribute("cy",pcy); bg.setAttribute("r",R);
+    bg.setAttribute("fill",color); bg.setAttribute("opacity","0.88"); sg.appendChild(bg);
+
+    if (emp.FOTO) {
+      const img=document.createElementNS(ns,"image");
+      img.setAttribute("x",pcx-R); img.setAttribute("y",pcy-R);
+      img.setAttribute("width",R*2); img.setAttribute("height",R*2);
+      img.setAttribute("href",emp.FOTO); img.setAttribute("clip-path",`url(#${clipId})`);
+      img.setAttribute("preserveAspectRatio","xMidYMid slice"); sg.appendChild(img);
+    } else {
+      const t=document.createElementNS(ns,"text");
+      t.setAttribute("x",pcx); t.setAttribute("y",pcy+1);
+      t.setAttribute("text-anchor","middle"); t.setAttribute("dominant-baseline","middle");
+      t.setAttribute("fill","#fff"); t.setAttribute("font-size",Math.max(8,R*0.52));
+      t.setAttribute("font-family","Syne,sans-serif"); t.setAttribute("font-weight","700");
+      t.setAttribute("pointer-events","none"); t.setAttribute("clip-path",`url(#${clipId})`);
+      t.textContent=iniciales(emp.NOMBRE); sg.appendChild(t);
+    }
+
+    // Border (darker for depth)
+    const brd=document.createElementNS(ns,"circle");
+    brd.setAttribute("cx",pcx); brd.setAttribute("cy",pcy); brd.setAttribute("r",R);
+    brd.setAttribute("fill","none"); brd.setAttribute("stroke","rgba(0,0,0,0.5)");
+    brd.setAttribute("stroke-width","2"); brd.setAttribute("pointer-events","none"); sg.appendChild(brd);
+  }
+
+  // COUNT BADGE — top-right of the top card
+  const topCX = cx + (show-1)*off*0.6;
+  const topCY = cy - (show-1)*off*0.6;
+  const badgeR = Math.max(9, R*0.38);
+  const bx = topCX + R*0.68;
+  const by = topCY - R*0.68;
+
+  const badgeBg=document.createElementNS(ns,"circle");
+  badgeBg.setAttribute("cx",bx); badgeBg.setAttribute("cy",by);
+  badgeBg.setAttribute("r",badgeR); badgeBg.setAttribute("fill","#0b0d14");
+  badgeBg.setAttribute("stroke","rgba(255,255,255,0.25)"); badgeBg.setAttribute("stroke-width","1.5");
+  badgeBg.setAttribute("pointer-events","none"); sg.appendChild(badgeBg);
+
+  const badgeTxt=document.createElementNS(ns,"text");
+  badgeTxt.setAttribute("x",bx); badgeTxt.setAttribute("y",by+0.5);
+  badgeTxt.setAttribute("text-anchor","middle"); badgeTxt.setAttribute("dominant-baseline","middle");
+  badgeTxt.setAttribute("fill","#fff"); badgeTxt.setAttribute("font-size",Math.max(7,badgeR*0.9));
+  badgeTxt.setAttribute("font-family","Syne,sans-serif"); badgeTxt.setAttribute("font-weight","700");
+  badgeTxt.setAttribute("pointer-events","none"); badgeTxt.textContent=n; sg.appendChild(badgeTxt);
+
+  // Invisible hit zone
+  const hitX = cx - R - 4;
+  const hitY = topCY - R - 4;
+  const hitW = R*2 + (show-1)*off*0.6 + 8;
+  const hitH = R*2 + (show-1)*off*0.6 + 8;
+
+  const hit=document.createElementNS(ns,"rect");
+  hit.setAttribute("x",hitX); hit.setAttribute("y",hitY);
+  hit.setAttribute("width",hitW); hit.setAttribute("height",hitH);
+  hit.setAttribute("fill","transparent");
+  hit.setAttribute("cursor", isDimmed ? "default" : "pointer");
+  if (isDimmed) hit.setAttribute("pointer-events","none");
+
+  hit.addEventListener("click",e=>{ e.stopPropagation(); toggleStack(e,group,key,cx,cy,R); });
+  hit._hoverType  = "stack";
+  hit._hoverGroup = group;
+  hit._hoverKey   = key;
+  hit._cx = cx; hit._cy = cy; hit._R = R;
+  svg.appendChild(hit);
+}
+
+/* ── SINGLE TOOLTIP ── */
+function showTooltip(e,emp,color) { fillTooltip(emp,color); posEl(tooltipEl,e,210,190); tooltipEl.classList.add("visible"); }
+function hideTooltip() { tooltipEl.classList.remove("visible"); }
+function toggleTooltip(e,emp,color,dotCX,dotCY,dotR) {
+  if (tooltipFijo && tooltipEl._cc===emp.CC) { tooltipFijo=false; tooltipEl._cc=null; hideTooltip(); activeCC=null; refreshHL(); return; }
+  tooltipFijo=true; tooltipEl._cc=emp.CC; activeCC=emp.CC; activeStackKey=null;
+  fillTooltip(emp,color);
+  const svgRect=document.getElementById("grid-svg").getBoundingClientRect();
+  const svgW=parseFloat(document.getElementById("grid-svg").getAttribute("viewBox").split(" ")[2]);
+  const svgH=parseFloat(document.getElementById("grid-svg").getAttribute("viewBox").split(" ")[3]);
+  posNearDot(tooltipEl, dotCX, dotCY, dotR, svgRect, svgW, svgH);
+  tooltipEl.classList.add("visible"); refreshHL();
+}
+function fillTooltip(emp,color) {
+  const des=Math.round(emp.PUNTAJE_DESEMPENO), pot=Math.round(emp.PUNTAJE_POTENCIAL);
+  const qm=clasificar(des,pot);
+  const wrap=document.getElementById("tt-foto-wrap");
+  if(emp.FOTO) wrap.innerHTML=`<div class="tt-avatar" style="border:2px solid ${color};padding:0"><img src="${emp.FOTO}" style="width:100%;height:100%;object-fit:cover"/></div>`;
+  else wrap.innerHTML=`<div class="tt-avatar" style="background:${color}">${iniciales(emp.NOMBRE)}</div>`;
+  document.getElementById("tt-nombre").textContent=emp.NOMBRE;
+  document.getElementById("tt-cargo").textContent=emp.CARGO||"—";
+  const qq=document.getElementById("tt-quad"); qq.textContent=qm.nombre; qq.style.background=qm.color+"22"; qq.style.color=qm.color;
+  document.getElementById("tt-des").textContent=des+"%"; document.getElementById("tt-pot").textContent=pot+"%";
+  document.getElementById("tt-des-bar").style.width=des+"%"; document.getElementById("tt-pot-bar").style.width=pot+"%";
+}
+
+/* ── STACK POPOVER ── */
+function showStack(e,group,key) { fillStack(group,key); posEl(stackPopoverEl,e,250,group.length*56+50); stackPopoverEl.classList.add("visible"); }
+function hideStack() { stackPopoverEl.classList.remove("visible"); }
+function toggleStack(e,group,key,dotCX,dotCY,dotR) {
+  if(stackFijo&&activeStackKey===key) { stackFijo=false; activeStackKey=null; hideStack(); refreshHL(); return; }
+  stackFijo=true; activeStackKey=key; activeCC=null;
+  tooltipFijo=false; hideTooltip();
+  fillStack(group,key,dotCX,dotCY,dotR);
+  const svgRect=document.getElementById("grid-svg").getBoundingClientRect();
+  const svgW=parseFloat(document.getElementById("grid-svg").getAttribute("viewBox").split(" ")[2]);
+  const svgH=parseFloat(document.getElementById("grid-svg").getAttribute("viewBox").split(" ")[3]);
+  posNearDot(stackPopoverEl, dotCX, dotCY, dotR, svgRect, svgW, svgH);
+  stackPopoverEl.classList.add("visible"); refreshHL();
+}
+function fillStack(group,key,dotCX,dotCY,dotR) {
+  const qm=clasificar(group[0].PUNTAJE_DESEMPENO,group[0].PUNTAJE_POTENCIAL);
+  document.getElementById("sp-count").textContent=group.length;
+  document.getElementById("sp-title").textContent=`Des ${group[0].PUNTAJE_DESEMPENO}% · Pot ${group[0].PUNTAJE_POTENCIAL}%`;
+  const list=document.getElementById("sp-list"); list.innerHTML="";
+  group.forEach(emp=>{
+    const color=colorMap[emp.CC];
+    const item=document.createElement("div"); item.className="sp-item";
+    const av=document.createElement("div"); av.className="sp-avatar"; av.style.borderColor=color;
+    if(emp.FOTO) av.innerHTML=`<img src="${emp.FOTO}"/>`;
+    else { av.style.background=color; av.textContent=iniciales(emp.NOMBRE); }
+    const info=document.createElement("div");
+    info.innerHTML=`<div class="sp-nombre">${emp.NOMBRE}</div><div class="sp-cargo">${emp.CARGO||"—"}</div><div class="sp-quad" style="color:${qm.color}">${qm.nombre}</div>`;
+    item.appendChild(av); item.appendChild(info);
+    item.addEventListener("click",e2=>{
+      e2.stopPropagation();
+      stackFijo=false; hideStack(); activeStackKey=null;
+      activeCC=emp.CC; tooltipFijo=true; tooltipEl._cc=emp.CC;
+      fillTooltip(emp,color);
+      // Position near the actual dot on the grid (not the list item)
+      if (dotCX !== undefined) {
+        const svgEl  = document.getElementById("grid-svg");
+        const svgRect= svgEl.getBoundingClientRect();
+        const vb     = svgEl.getAttribute("viewBox").split(" ");
+        posNearDot(tooltipEl, dotCX, dotCY, dotR, svgRect, parseFloat(vb[2]), parseFloat(vb[3]));
+      } else {
+        const rect=item.getBoundingClientRect();
+        posEl(tooltipEl,{clientX:rect.right+8,clientY:rect.top},210,190);
+      }
+      tooltipEl.classList.add("visible"); refreshHL();
+    });
+    list.appendChild(item);
+  });
+}
+
+/* ── GLOBAL CLOSE ── */
+document.addEventListener("click",()=>{
+  if(tooltipFijo){ tooltipFijo=false; tooltipEl._cc=null; hideTooltip(); activeCC=null; refreshHL(); }
+  if(stackFijo){ stackFijo=false; activeStackKey=null; hideStack(); refreshHL(); }
+});
+
+/* ── NAME CLICK ── */
+function handleNameClick(emp, evt) {
+  if (evt) evt.stopPropagation();
+  // Always work with individual: close any open stack popover
+  stackFijo=false; activeStackKey=null; hideStack();
+  tooltipFijo=false; hideTooltip();
+  if (activeCC===emp.CC) {
+    // toggle off
+    activeCC=null;
+  } else {
+    activeCC=emp.CC;
+  }
+  refreshHL();
+}
+
+function refreshHL() {
+  // Determine which CCs are "selected" (from name panel click)
+  let selectedCCs = new Set();
+  if (activeCC) selectedCCs.add(activeCC);
+  if (activeStackKey) {
+    empleadosFiltrados.filter(e=>scoreKey(e)===activeStackKey).forEach(e=>selectedCCs.add(e.CC));
+  }
+
+  // Highlight name items (ALL stay visible, only selected get activo class)
+  document.querySelectorAll(".name-item").forEach(el => {
+    el.style.display = "";  // always visible
+    const cc = el.id.replace("ni-", "");
+    if (selectedCCs.size === 0 || !selectedCCs.has(cc)) {
+      el.classList.remove("activo");
+    } else {
+      el.classList.add("activo");
+    }
+  });
+
+  // Grid: if a name was clicked, only draw that person/stack — others become ghost
+  // We pass the full list but drawSingle/drawStack will dim non-selected dots
+  buildGrid(empleadosFiltrados, selectedCCs);
+}
+
+function clearSelection() {
+  activeCC = null; activeStackKey = null;
+  tooltipFijo = false; tooltipEl._cc = null; hideTooltip();
+  stackFijo = false; hideStack();
+  refreshHL();
+}
+
+/* ── FILTERS ── */
+function filtrar() {
+  const area=document.getElementById("filtro-area").value;
+  const cargo=document.getElementById("filtro-cargo").value;
+  empleadosFiltrados=todosEmpleados.filter(e=>(!area||e.AREA===area)&&(!cargo||e.CARGO===cargo));
+  buildStats(empleadosFiltrados); buildNames(empleadosFiltrados); buildGrid(empleadosFiltrados);
+}
+function poblarFiltros(list) {
+  const areas=[...new Set(list.map(e=>e.AREA).filter(Boolean))].sort();
+  const cargos=[...new Set(list.map(e=>e.CARGO).filter(Boolean))].sort();
+  const sa=document.getElementById("filtro-area"); areas.forEach(a=>{const o=document.createElement("option");o.value=o.textContent=a;sa.appendChild(o);});
+  const sc=document.getElementById("filtro-cargo"); cargos.forEach(c=>{const o=document.createElement("option");o.value=o.textContent=c;sc.appendChild(o);});
+}
+
+/* ── LOADING / ERROR helpers ── */
+function showLoading() {
+  document.getElementById("names-panel").innerHTML =
+    `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:10px;opacity:0.4">
+       <div style="width:18px;height:18px;border:2px solid rgba(255,255,255,0.15);border-top-color:#7c6af7;border-radius:50%;animation:spin 0.8s linear infinite"></div>
+       <span style="font-size:0.6rem;font-family:'JetBrains Mono',monospace;color:#555d78;text-transform:uppercase;letter-spacing:0.06em">Cargando...</span>
+     </div>`;
+  const svg=document.getElementById("grid-svg");
+  const wrap=document.getElementById("canvas-wrap");
+  svg.setAttribute("viewBox",`0 0 ${wrap.clientWidth||600} ${wrap.clientHeight||400}`);
+  svg.innerHTML=`<text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" fill="rgba(255,255,255,0.15)" font-size="13" font-family="JetBrains Mono,monospace">Conectando a la API...</text>`;
+}
+
+function showError(msg) {
+  document.getElementById("names-panel").innerHTML="";
+  const svg=document.getElementById("grid-svg");
+  const wrap=document.getElementById("canvas-wrap");
+  svg.setAttribute("viewBox",`0 0 ${wrap.clientWidth||600} ${wrap.clientHeight||400}`);
+  svg.innerHTML=`
+    <text x="50%" y="44%" text-anchor="middle" dominant-baseline="middle" fill="#f87171" font-size="13" font-family="JetBrains Mono,monospace">⚠ No se pudo conectar a la API</text>
+    <text x="50%" y="56%" text-anchor="middle" dominant-baseline="middle" fill="rgba(255,255,255,0.2)" font-size="10" font-family="JetBrains Mono,monospace">${msg}</text>`;
+}
+
+/* ── INIT ── */
+async function init() {
+  showLoading();
+
+  if (USE_DEMO) {
+    /* Modo desarrollo: usa datos de ejemplo directamente */
+    todosEmpleados = DEMO;
+  } else {
+    /* Modo producción: llama a la API */
+    try {
+      const res = await fetch(API_URL);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      /* La API puede devolver { empleados: [...] } o directamente [...] */
+      todosEmpleados = Array.isArray(data) ? data : (data.empleados ?? data.data ?? []);
+
+      if (!todosEmpleados.length) throw new Error("La API devolvió 0 registros");
+
+    } catch (err) {
+      console.warn("API no disponible, usando demo:", err.message);
+      /* Fallback silencioso a datos de ejemplo */
+      todosEmpleados = DEMO;
+      /* Descomenta la línea siguiente si prefieres mostrar el error en lugar del demo: */
+      /* showError(err.message); return; */
+    }
+  }
+
+  todosEmpleados.forEach((emp, i) => { colorMap[emp.CC] = COLORES_DOT[i % COLORES_DOT.length]; });
+  empleadosFiltrados = [...todosEmpleados];
+  poblarFiltros(todosEmpleados);
+  buildStats(empleadosFiltrados);
+  buildNames(empleadosFiltrados);
+  buildGrid(empleadosFiltrados);
+}
+
+window.addEventListener("resize", () => buildGrid(empleadosFiltrados));
+init();
+</script>
+</body>
+</html>
