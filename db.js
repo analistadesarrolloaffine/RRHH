@@ -2,9 +2,21 @@
 const oracledb = require('oracledb');
 require('dotenv').config();
 
-oracledb.initOracleClient({
-  libDir: 'C:\\Users\\liderdesarrollo\\Downloads\\instantclient_21_20'
-});
+// oracledb.initOracleClient({
+//   libDir: 'C:\\Users\\liderdesarrollo\\Downloads\\instantclient_21_20'
+// });
+
+if (process.platform === 'win32') {
+  oracledb.initOracleClient({ 
+    libDir: 'C:\\Users\\liderdesarrollo\\Downloads\\instantclient_21_20' 
+  });
+} else {
+  // Ruta en Render (Linux)
+  oracledb.initOracleClient({ 
+    libDir: '/opt/oracle/instantclient_21_20' 
+  });
+}
+
 oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT; // resultados como objetos JS
 
 let pool;

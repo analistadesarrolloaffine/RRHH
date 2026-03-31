@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: rrhh-api
+    runtime: node
+    buildCommand: |
+      apt-get install -y libaio1
+      wget https://download.oracle.com/otn_software/linux/instantclient/2120000/instantclient-basiclite-linux.x64-21.20.0.0.0dbru.zip
+      unzip instantclient-basiclite-linux.x64-21.20.0.0.0dbru.zip -d /opt/oracle
+      sh -c "echo /opt/oracle/instantclient_21_20 > /etc/ld.so.conf.d/oracle-instantclient.conf"
+      ldconfig
+      npm install
+    startCommand: node server.js
